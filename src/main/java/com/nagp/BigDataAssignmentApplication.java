@@ -1,4 +1,4 @@
-package com.nagarro;
+package com.nagp;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

@@ -1,4 +1,4 @@
-package com.nagarro.nagp.big.data.config;
+package com.nagp.big.data.config;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.ConfigurationProperties;
