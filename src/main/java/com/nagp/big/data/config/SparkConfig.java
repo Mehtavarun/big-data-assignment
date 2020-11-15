@@ -2,7 +2,6 @@ package com.nagp.big.data.config;
 
 import org.apache.spark.SparkConf;
 import org.apache.spark.SparkContext;
-import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.sql.SparkSession;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
@@ -23,12 +22,6 @@ public class SparkConfig {
     @Bean
     public SparkConf sparkConf() {
         return new SparkConf().setMaster("local[*]").setAppName(properties.getSparkAppName());
-    }
-
-    @Bean
-    @DependsOn({ "sparkConf" })
-    public JavaSparkContext javaSparkContext() {
-        return new JavaSparkContext(sparkConf());
     }
 
     @Bean
