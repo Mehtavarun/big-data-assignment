@@ -1,5 +1,8 @@
 package com.nagp.big.data.config;
 
+import java.util.List;
+
+import org.apache.kafka.common.serialization.Serializer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -18,4 +21,15 @@ public class ConfigProperties {
     @Value("${file.name}")
     private String filename;
 
+    @Value("${kafka.bootstrap.servers}")
+    private String kafkaUrl;
+
+    @Value("#{${kafka.topics}}")
+    private List<String> topics;
+
+    @Value("${kafka.producer.key-serializer}")
+    private Class<Serializer<?>> keySerializer;
+
+    @Value("${kafka.producer.value-serializer}")
+    private Class<Serializer<?>> valueSerializer;
 }

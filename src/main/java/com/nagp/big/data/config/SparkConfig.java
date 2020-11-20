@@ -15,11 +15,6 @@ public class SparkConfig {
     private ConfigProperties properties;
 
     @Bean
-    public ConfigProperties configProperties() {
-        return new ConfigProperties();
-    }
-
-    @Bean
     public SparkConf sparkConf() {
         return new SparkConf().setMaster("local[*]").setAppName(properties.getSparkAppName())
                 .set("spark.sql.legacy.timeParserPolicy", "LEGACY");

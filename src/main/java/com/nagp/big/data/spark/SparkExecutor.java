@@ -33,18 +33,18 @@ public class SparkExecutor implements ApplicationRunner {
         Dataset<Row> invoicesData = spark.sql(
                 "SELECT * FROM Inv I1 WHERE I1.InvoiceTotal > (SELECT AVG(I2.InvoiceTotal) FROM INV I2 WHERE I1.InvoiceVendorName = I2.InvoiceVendorName)");
         invoicesData.show();
-        writeToParquet(invoicesData, "invoices_with_amnt_gt_invtotal.parquet");
+//        writeToParquet(invoicesData, "invoices_with_amnt_gt_invtotal.parquet");
 //        Dataset<Row> testParquet = spark.read().parquet("test.parquet");
 //        testParquet.createOrReplaceTempView("testInvoicesParquet");
 //        spark.sql("SELECT InvoiceNo, InvoiceVendorName FROM testInvoicesParquet").limit(1).show();
     }
 
     private void performUserQuery() throws IOException {
+//        findInvoicesDateDiffGt1(testParquet);
         BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
         Dataset<Row> testParquet = spark.read().parquet("invoices.parquet");
         testParquet.createOrReplaceTempView("Inv");
-        findInvoicesDateDiffGt1(testParquet);
-
+//        testParquet.filter(functions.year(functions.col(""))).show();
         System.out.println();
 //        while (true) {
 //            try {
@@ -108,7 +108,7 @@ public class SparkExecutor implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) throws Exception {
 //        run();
-        performUserQuery();
+//        performUserQuery();
         System.exit(1);
     }
 }
