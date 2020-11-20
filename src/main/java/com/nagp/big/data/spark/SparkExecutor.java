@@ -43,40 +43,7 @@ public class SparkExecutor implements ApplicationRunner {
         BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
         Dataset<Row> testParquet = spark.read().parquet("invoices.parquet");
         testParquet.createOrReplaceTempView("Inv");
-//        https://sparkbyexamples.com/spark/spark-calculate-difference-between-two-dates-in-days-months-and-years/
-//        https://sparkbyexamples.com/spark/spark-date-functions-format-dates/
-//        Dataset<Row> df = testParquet.sqlContext()
-//                .sql("SELECT CAST(InvoiceDate AS DATE), CAST(InvoiceRecvDate AS DATE)").toDF("InvDate", "InvRecvDate");
-//        df.select(functions.datediff(df.col("InvDate"), df.col("InvRecvDate"))).show();
-
-        testParquet.toDF()
-                .select(functions.col("InvoiceDate"), functions
-                        .when(functions.to_date(functions.col("InvoiceDate"), "MM/dd/yyyy").isNotNull(),
-                                functions.to_date(functions.col("InvoiceDate"), "MM/dd/yyyy"))
-                        .otherwise(functions
-                                .when(functions.to_date(functions.col("InvoiceDate"), "M/d/yyyy").isNotNull(),
-                                        functions.to_date(functions.col("InvoiceDate"), "M/d/yyyy"))
-                                .otherwise(functions.when(
-                                        functions.to_date(functions.col("InvoiceDate"), "MM-dd-yyyy").isNotNull(),
-                                        functions.to_date(functions.col("InvoiceDate"), "MM-dd-yyyy"))))
-                        .as("FormatedInvoiceDate"), functions.col("InvoiceRecvdDate"),
-                        functions.when(functions
-                                .to_date(functions.col("InvoiceRecvdDate"), "MM/dd/yyyy").isNotNull(),
-                                functions.to_date(functions.col("InvoiceRecvdDate"), "MM/dd/yyyy"))
-                                .otherwise(functions
-                                        .when(functions.to_date(functions.col("InvoiceRecvdDate"), "M/d/yyyy")
-                                                .isNotNull(),
-                                                functions.to_date(functions.col("InvoiceRecvdDate"), "M/d/yyyy"))
-                                        .otherwise(functions.when(
-                                                functions.to_date(functions.col("InvoiceRecvdDate"), "MM-dd-yyyy")
-                                                        .isNotNull(),
-                                                functions.to_date(functions.col("InvoiceRecvdDate"), "MM-dd-yyyy"))))
-                                .as("FormatedInvoiceRecvdDate"))
-                .show();
-//                .withColumn("Invdatediff",
-//                        functions.when(functions.to_date(functions.col("InvoiceDate"), "dd/MM/yyyy").isNotNull(),
-//                                functions.to_date(functions.col("InvoiceDate"), "dd/MM/yyyy")))
-//                .withColumn("InvRecvDateDiff", functions.date_format(functions.col("InvoiceRecvDate"), "dd-MM-yyyy"));
+        findInvoicesDateDiffGt1(testParquet);
 
         System.out.println();
 //        while (true) {
@@ -87,6 +54,37 @@ public class SparkExecutor implements ApplicationRunner {
 //            }
 //            System.out.println();
 //        }
+    }
+
+    private void findInvoicesDateDiffGt1(Dataset<Row> testParquet) {
+        Dataset<Row> dateDiffGt1 = testParquet.toDF()
+                .filter(functions
+                        .months_between(functions.when(functions
+                                .to_date(functions.col("InvoiceRecvdDate"), "MM/dd/yyyy").isNotNull(),
+                                functions.to_date(functions.col("InvoiceRecvdDate"), "MM/dd/yyyy"))
+                                .otherwise(functions.when(functions
+                                        .to_date(functions.col("InvoiceRecvdDate"), "M/d/yyyy").isNotNull(),
+                                        functions.to_date(functions.col("InvoiceRecvdDate"), "M/d/yyyy"))
+                                        .otherwise(functions.when(
+                                                functions.to_date(functions.col("InvoiceRecvdDate"), "MM-dd-yyyy")
+                                                        .isNotNull(),
+                                                functions.to_date(functions.col("InvoiceRecvdDate"), "MM-dd-yyyy")))),
+                                functions
+                                        .when(functions.to_date(functions.col("InvoiceDate"), "MM/dd/yyyy")
+                                                .isNotNull(),
+                                                functions.to_date(functions.col("InvoiceDate"), "MM/dd/yyyy"))
+                                        .otherwise(functions
+                                                .when(functions.to_date(functions.col("InvoiceDate"),
+                                                        "M/d/yyyy").isNotNull(),
+                                                        functions.to_date(functions.col("InvoiceDate"), "M/d/yyyy"))
+                                                .otherwise(functions.when(
+                                                        functions.to_date(functions.col("InvoiceDate"), "MM-dd-yyyy")
+                                                                .isNotNull(),
+                                                        functions.to_date(functions.col("InvoiceDate"),
+                                                                "MM-dd-yyyy")))),
+                                true)
+                        .divide(12).gt(1.00));
+        writeToParquet(dateDiffGt1, "date_diff_gt_by_1.parquet");
     }
 
     private void writeToParquet(Dataset<Row> invoicesData, String filename) {
