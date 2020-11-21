@@ -14,15 +14,15 @@ import lombok.extern.slf4j.Slf4j;
 public class MessagePublisher {
 
     @Autowired
-    private KafkaTemplate<String, String> kafkaTemplate;
+    private KafkaTemplate<String, Object> kafkaTemplate;
 
-    public void sendMessage(String topicName, String message, String key) {
-        ListenableFuture<SendResult<String, String>> future = kafkaTemplate.send(topicName, key, message);
+    public void sendMessage(String topicName, Object message, String key) {
+        ListenableFuture<SendResult<String, Object>> future = kafkaTemplate.send(topicName, key, message);
 
-        future.addCallback(new ListenableFutureCallback<SendResult<String, String>>() {
+        future.addCallback(new ListenableFutureCallback<SendResult<String, Object>>() {
 
             @Override
-            public void onSuccess(SendResult<String, String> result) {
+            public void onSuccess(SendResult<String, Object> result) {
                 log.info("Sent message=[{}] with offset=[{}]", message, result.getRecordMetadata().offset());
             }
 

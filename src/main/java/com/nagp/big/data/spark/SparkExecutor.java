@@ -5,6 +5,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.UUID;
 
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
@@ -17,6 +18,7 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 
 import com.nagp.big.data.config.ConfigProperties;
+import com.nagp.big.data.kafka.publisher.MessagePublisher;
 
 @Component
 public class SparkExecutor implements ApplicationRunner {
@@ -26,6 +28,11 @@ public class SparkExecutor implements ApplicationRunner {
 
     @Autowired
     private ConfigProperties properties;
+
+    @Autowired
+    private MessagePublisher messagePublisher;
+
+    private static final String BIG_DATA_TOPIC = "nagp.bigdata";
 
     private void run() throws FileNotFoundException {
         Dataset<Row> invoicesCsv = getCsv();
@@ -42,7 +49,7 @@ public class SparkExecutor implements ApplicationRunner {
     private void performUserQuery() throws IOException {
 //        findInvoicesDateDiffGt1(testParquet);
         BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-        Dataset<Row> testParquet = spark.read().parquet("invoices.parquet");
+        Dataset<Row> testParquet = spark.read().parquet("date_diff_gt_by_1.parquet");
         testParquet.createOrReplaceTempView("Inv");
 //        testParquet.filter(functions.year(functions.col(""))).show();
         System.out.println();
@@ -54,6 +61,14 @@ public class SparkExecutor implements ApplicationRunner {
 //            }
 //            System.out.println();
 //        }
+        sendData(testParquet);
+    }
+
+    private void sendData(Dataset<Row> testParquet) {
+        Dataset<Row> data = spark.sql("SELECT * FROM INV").limit(40);
+        for (Row r : data.collectAsList()) {
+            messagePublisher.sendMessage(BIG_DATA_TOPIC, r.toString(), UUID.randomUUID().toString());
+        }
     }
 
     private void findInvoicesDateDiffGt1(Dataset<Row> testParquet) {
@@ -96,19 +111,14 @@ public class SparkExecutor implements ApplicationRunner {
         String filepath = properties.getFilePath() + File.separator + properties.getFilename();
         Dataset<Row> invoicesCsv = spark.read().format("csv").option("header", "true").load(filepath)
                 .withColumn("InvoiceTotal", functions.col("InvoiceTotal").cast("Double"))
-                .withColumn("PaidAmt", functions.col("PaidAmt").cast("Double"))
-//                .withColumn("InvoiceDate", functions.col("InvoiceDate").cast("Date"))
-//                .withColumn("InvoiceRecvdDate", functions.col("InvoiceRecvdDate").cast("Date"))
-//                .withColumn("ApprovedDate", functions.col("ApprovedDate").cast("Date"))
-//                .withColumn("CreateDate", functions.col("CreateDate").cast("Timestamp"))
-        ;
+                .withColumn("PaidAmt", functions.col("PaidAmt").cast("Double"));
         return invoicesCsv;
     }
 
     @Override
     public void run(ApplicationArguments args) throws Exception {
 //        run();
-//        performUserQuery();
+        performUserQuery();
         System.exit(1);
     }
 }
