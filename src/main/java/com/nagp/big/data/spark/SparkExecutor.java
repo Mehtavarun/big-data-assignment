@@ -5,9 +5,13 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
+import org.apache.spark.rdd.RDD;
 import org.apache.spark.sql.Dataset;
+import org.apache.spark.sql.Encoders;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SaveMode;
 import org.apache.spark.sql.SparkSession;
@@ -19,6 +23,7 @@ import org.springframework.stereotype.Component;
 
 import com.nagp.big.data.config.ConfigProperties;
 import com.nagp.big.data.kafka.publisher.MessagePublisher;
+import com.nagp.big.data.model.Invoice;
 
 @Component
 public class SparkExecutor implements ApplicationRunner {
@@ -49,7 +54,7 @@ public class SparkExecutor implements ApplicationRunner {
     private void performUserQuery() throws IOException {
 //        findInvoicesDateDiffGt1(testParquet);
         BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-        Dataset<Row> testParquet = spark.read().parquet("date_diff_gt_by_1.parquet");
+        Dataset<Invoice> testParquet = spark.read().parquet("invoices.parquet").as(Encoders.bean(Invoice.class));
         testParquet.createOrReplaceTempView("Inv");
 //        testParquet.filter(functions.year(functions.col(""))).show();
         System.out.println();
@@ -61,7 +66,18 @@ public class SparkExecutor implements ApplicationRunner {
 //            }
 //            System.out.println();
 //        }
-        sendData(testParquet);
+//        sendData(testParquet);
+//        saveDataInCassandra(testParquet);
+    }
+
+    private void saveDataInCassandra(Dataset<Invoice> testParquet) {
+        Map<String, String> map = new HashMap<>();
+        map.put("keyspace", "nagp");
+        map.put("table", "invoices");
+        RDD<Invoice> rdd = testParquet.rdd();
+        spark.sqlContext().createDataFrame(rdd, Invoice.class).write().format("org.apache.spark.sql.cassandra")
+                .mode(SaveMode.Append).options(map).save();
+//        testParquet.write().format("org.apache.spark.sql.cassandra").mode(SaveMode.Append).options(map).save();
     }
 
     private void sendData(Dataset<Row> testParquet) {
