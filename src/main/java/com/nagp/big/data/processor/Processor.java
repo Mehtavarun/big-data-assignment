@@ -1,4 +1,4 @@
-package com.nagp.big.data.spark;
+package com.nagp.big.data.processor;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -36,7 +36,7 @@ import com.nagp.big.data.model.Invoice;
  *
  */
 @Component
-public class SparkExecutor implements ApplicationRunner {
+public class Processor implements ApplicationRunner {
 
     @Autowired
     private SparkSession spark;
