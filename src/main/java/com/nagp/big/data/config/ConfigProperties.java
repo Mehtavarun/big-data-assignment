@@ -12,6 +12,9 @@ import lombok.Getter;
 @ConfigurationProperties(prefix = "")
 public class ConfigProperties {
 
+    @Value("${executor.thread-count}")
+    private int threadCount;
+
     @Value("${spark.app-name}")
     private String sparkAppName;
 

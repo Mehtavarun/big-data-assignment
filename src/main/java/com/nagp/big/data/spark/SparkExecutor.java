@@ -6,8 +6,16 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+
+import javax.annotation.PreDestroy;
 
 import org.apache.spark.rdd.RDD;
 import org.apache.spark.sql.Dataset;
@@ -25,6 +33,10 @@ import com.nagp.big.data.config.ConfigProperties;
 import com.nagp.big.data.kafka.publisher.MessagePublisher;
 import com.nagp.big.data.model.Invoice;
 
+/**
+ * @author varunmehta02
+ *
+ */
 @Component
 public class SparkExecutor implements ApplicationRunner {
 
@@ -37,58 +49,45 @@ public class SparkExecutor implements ApplicationRunner {
     @Autowired
     private MessagePublisher messagePublisher;
 
+    @Autowired
+    private ExecutorService executorService;
+
     private static final String BIG_DATA_TOPIC = "nagp.bigdata";
 
     private void run() throws FileNotFoundException {
-        Dataset<Row> invoicesCsv = getCsv();
-        invoicesCsv.createOrReplaceTempView("inv");
-        Dataset<Row> invoicesData = spark.sql(
+        Dataset<Invoice> invoicesCsv = encodeToBean(Invoice.class, getCsv());
+        invoicesCsv.createOrReplaceTempView("Inv");
+        writeToParquet(invoicesCsv, "invoices.parquet");
+    }
+
+    private void getInvoicesWithInvAmntGtThenInvAmnt(String outputParquetName)
+            throws InterruptedException, ExecutionException {
+        Dataset<Row> invoicesRowData = spark.sql(
                 "SELECT * FROM Inv I1 WHERE I1.InvoiceTotal > (SELECT AVG(I2.InvoiceTotal) FROM INV I2 WHERE I1.InvoiceVendorName = I2.InvoiceVendorName)");
-        invoicesData.show();
-//        writeToParquet(invoicesData, "invoices_with_amnt_gt_invtotal.parquet");
-//        Dataset<Row> testParquet = spark.read().parquet("test.parquet");
-//        testParquet.createOrReplaceTempView("testInvoicesParquet");
-//        spark.sql("SELECT InvoiceNo, InvoiceVendorName FROM testInvoicesParquet").limit(1).show();
+        Dataset<Invoice> invoiceData = encodeToBean(Invoice.class, invoicesRowData);
+        processInvoiceData(() -> writeToParquet(invoiceData, outputParquetName), () -> sendData(invoiceData),
+                () -> saveDataInCassandra(invoiceData));
     }
 
-    private void performUserQuery() throws IOException {
-//        findInvoicesDateDiffGt1(testParquet);
-        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-        Dataset<Invoice> testParquet = spark.read().parquet("invoices.parquet").as(Encoders.bean(Invoice.class));
-        testParquet.createOrReplaceTempView("Inv");
-//        testParquet.filter(functions.year(functions.col(""))).show();
-        System.out.println();
-//        while (true) {
-//            try {
-//                spark.sql(br.readLine()).show();
-//            } catch (Exception e) {
-//                System.err.println(e.getMessage());
-//            }
-//            System.out.println();
-//        }
-//        sendData(testParquet);
-//        saveDataInCassandra(testParquet);
+    private void getCountInvWithDateDiffBy1Y(String outputParquetName) throws InterruptedException, ExecutionException {
+        Dataset<Row> invoiceParquet = readParquet("invoices.parquet");
+        Dataset<Invoice> invoicesDateDiffGt1 = encodeToBean(Invoice.class, findInvoicesDateDiffGt1(invoiceParquet));
+        processInvoiceData(() -> writeToParquet(invoicesDateDiffGt1, outputParquetName),
+                () -> sendData(invoicesDateDiffGt1), () -> saveDataInCassandra(invoicesDateDiffGt1));
     }
 
-    private void saveDataInCassandra(Dataset<Invoice> testParquet) {
-        Map<String, String> map = new HashMap<>();
-        map.put("keyspace", "nagp");
-        map.put("table", "invoices");
-        RDD<Invoice> rdd = testParquet.rdd();
-        spark.sqlContext().createDataFrame(rdd, Invoice.class).write().format("org.apache.spark.sql.cassandra")
-                .mode(SaveMode.Append).options(map).save();
-//        testParquet.write().format("org.apache.spark.sql.cassandra").mode(SaveMode.Append).options(map).save();
-    }
-
-    private void sendData(Dataset<Row> testParquet) {
-        Dataset<Row> data = spark.sql("SELECT * FROM INV").limit(40);
-        for (Row r : data.collectAsList()) {
-            messagePublisher.sendMessage(BIG_DATA_TOPIC, r.toString(), UUID.randomUUID().toString());
+    private void processInvoiceData(Runnable... runnables) throws InterruptedException, ExecutionException {
+        List<Future<?>> futures = new LinkedList<>();
+        for (Runnable runnable : runnables) {
+            futures.add(executorService.submit(() -> runnable.run()));
+        }
+        for (Future<?> future : futures) {
+            future.get();
         }
     }
 
-    private void findInvoicesDateDiffGt1(Dataset<Row> testParquet) {
-        Dataset<Row> dateDiffGt1 = testParquet.toDF()
+    private Dataset<Row> findInvoicesDateDiffGt1(Dataset<Row> invoices) {
+        return invoices.toDF()
                 .filter(functions
                         .months_between(functions.when(functions
                                 .to_date(functions.col("InvoiceRecvdDate"), "MM/dd/yyyy").isNotNull(),
@@ -115,12 +114,20 @@ public class SparkExecutor implements ApplicationRunner {
                                                                 "MM-dd-yyyy")))),
                                 true)
                         .divide(12).gt(1.00));
-        writeToParquet(dateDiffGt1, "date_diff_gt_by_1.parquet");
     }
 
-    private void writeToParquet(Dataset<Row> invoicesData, String filename) {
-        invoicesData.write().format("parquet").mode(SaveMode.Overwrite)
-                .save(properties.getFilePath() + File.separator + filename);
+    private void saveDataInCassandra(Dataset<Invoice> dataset) {
+        Map<String, String> map = new HashMap<>();
+        map.put("keyspace", "nagp");
+        map.put("table", "invoices");
+        RDD<Invoice> rdd = dataset.rdd();
+        spark.sqlContext().createDataFrame(rdd, Invoice.class).write().format("org.apache.spark.sql.cassandra")
+                .mode(SaveMode.Append).options(map).save();
+    }
+
+    private void sendData(Dataset<Invoice> dataSet) {
+        dataSet.collectAsList().forEach(invoice -> messagePublisher.sendMessage(BIG_DATA_TOPIC, invoice.toString(),
+                UUID.randomUUID().toString()));
     }
 
     private Dataset<Row> getCsv() {
@@ -131,10 +138,50 @@ public class SparkExecutor implements ApplicationRunner {
         return invoicesCsv;
     }
 
+    private static <T, R> Dataset<R> encodeToBean(Class<R> beanClass, Dataset<T> dataSet) {
+        return dataSet.as(Encoders.bean(beanClass));
+    }
+
+    private Dataset<Row> readParquet(String parquetName) {
+        return spark.read().parquet(parquetName);
+    }
+
+    private void writeToParquet(Dataset<Invoice> invoicesData, String filename) {
+        invoicesData.write().format("parquet").mode(SaveMode.Overwrite)
+                .save(properties.getFilePath() + File.separator + filename);
+    }
+
+    private void performUserQuery() throws IOException {
+//        findInvoicesDateDiffGt1(testParquet);
+        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+        Dataset<Invoice> testParquet = readParquet("invoices.parquet").as(Encoders.bean(Invoice.class));
+        testParquet.createOrReplaceTempView("Inv");
+//        while (true) {
+//            try {
+//                spark.sql(br.readLine()).show();
+//            } catch (Exception e) {
+//                System.err.println(e.getMessage());
+//            }
+//            System.out.println();
+//        }
+        sendData(testParquet);
+        saveDataInCassandra(testParquet);
+    }
+
     @Override
     public void run(ApplicationArguments args) throws Exception {
-//        run();
-        performUserQuery();
+        run();
+//        performUserQuery();
+        getInvoicesWithInvAmntGtThenInvAmnt("invoices_with_amnt_gt_invtotal.parquet");
+        getCountInvWithDateDiffBy1Y("date_diff_gt_by_1.parquet");
+//        getTop5HighestTurnoverVendors();
         System.exit(1);
+    }
+
+    @PreDestroy
+    public void destroy() {
+        if (Objects.nonNull(executorService)) {
+            executorService.shutdown();
+        }
     }
 }
