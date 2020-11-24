@@ -94,6 +94,36 @@ public class Processor implements ApplicationRunner {
     }
 
     /**
+     * Top 5 Vendors with highest turnover
+     */
+    private void gtop5Vendors() {
+        Dataset<Invoice> testParquet = readParquet("invoices.parquet").as(Encoders.bean(Invoice.class));
+        Map<String, Double> map = new HashMap<>();
+        List<Row> take = testParquet.select("InvoiceTotal", "InvoiceVendorName", "InvoiceStatusDesc")
+                .groupBy("InvoiceVendorName", "InvoiceStatusDesc").sum("InvoiceTotal").toJavaRDD().groupBy((row) -> {
+                    return row.getAs("InvoiceVendorName").toString();
+                }).map((row) -> {
+                    row._2.forEach(r -> {
+                        String vendor = r.getString(0);
+                        Double value = r.getDouble(2);
+                        String status = r.getString(1);
+                        if (status.equals("Paid-in-Full")) {
+                            map.put(vendor, map.getOrDefault(vendor, 0.0) + value);
+                        } else if (status.equals("Rejected") || status.equals("Exception")) {
+                            map.put(vendor, map.getOrDefault(vendor, 0.0) - value);
+                        }
+                        return;
+                    });
+                    return row._2.iterator().next();
+                }).sortBy((r1) -> {
+                    return r1.getDouble(2);
+                }, false, 4).take(1000);
+        take.forEach(e -> {
+            System.out.println(e.toString());
+        });
+    }
+
+    /**
      * executes various runnable methods with multithreading using executorService
      * 
      * @param runnables
@@ -226,6 +256,7 @@ public class Processor implements ApplicationRunner {
         run();
         getInvoicesWithInvAmntGtThanAvgInvAmntForVendor("invoices_with_amnt_gt_invtotal.parquet");
         getCountInvWithDateDiffBy1Y("date_diff_gt_by_1.parquet");
+        gtop5Vendors();
         System.exit(1);
     }
 
